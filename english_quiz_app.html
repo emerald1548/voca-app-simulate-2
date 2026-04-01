@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>英単語テスト</title>
+  <style>
+    body { 
+      font-family: sans-serif; 
+      padding: 16px; 
+      text-align: center;
+      transition: background-color 0.3s;
+    }
+    .hidden { display: none; }
+    button { margin: 6px; padding: 14px; width: 90%; max-width: 400px; font-size: 16px; border-radius: 10px; }
+    select, input { padding: 10px; margin: 8px; width: 90%; max-width: 400px; font-size: 16px; }
+    #question { font-size: 24px; margin: 20px 0; }
+    .result { font-size: 48px; margin: 10px; }
+
+    .correct-bg { background-color: #c8f7c5; }
+    .wrong-bg { background-color: #f7c5c5; }
+
+    .result.wrong { color: blue; }
+  </style>
+</head>
+<body>
+
+<h2>英単語テスト</h2>
+
+<select id="dataset">
+  <option value="data/basic.csv">気にしないで</option>
+  <option value="data/共通テスト対策単語（課題考査）.csv">共通テスト対策（課題考査）</option>
+</select>
+
+<input type="file" id="fileInput" accept=".csv"><br>
+
+<select id="mode">
+  <option value="en-ja">英→日（選択）</option>
+  <option value="ja-en">日→英（記述）</option>
+</select><br>
+
+<select id="count">
+  <option value="10">10問</option>
+  <option value="20">20問</option>
+  <option value="30">30問</option>
+  <option value="50">50問</option>
+  <option value="100">100問</option>
+</select><br>
+
+<button onclick="startTest()">開始</button>
+
+<div id="quiz" class="hidden">
+  <p id="question"></p>
+  <div id="choices"></div>
+  <input type="text" id="answerInput" class="hidden" placeholder="英単語を入力">
+  <button onclick="submitAnswer()">回答</button>
+  <p class="result" id="result"></p>
+</div>
+
+<div id="score" class="hidden">
+  <h3>結果</h3>
+  <p id="scoreText"></p>
+  <div id="wrongList"></div>
+  <button id="retryBtn" class="hidden" onclick="retryWrong()">間違えた問題だけ再テスト</button>
+</div>
+
+<script>
+let words = [];
+let quizData = [];
+let current = 0;
+let correctCount = 0;
+let mode = "en-ja";
+let wrongList = [];
+let wrongData = [];
+
+document.getElementById("fileInput").addEventListener("change", function(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    parseCSV(event.target.result);
+  };
+  reader.readAsText(file);
+});
+
+async function loadCSV(path) {
+  const res = await fetch(path);
+  const text = await res.text();
+  parseCSV(text);
+}
+
+function parseCSV(text) {
+  const lines = text.split("\n");
+  words = lines
+    .map(line => line.trim())
+    .filter(l => l)
+    .map(line => line.split(","));
+}
+
+function shuffle(array) {
+  return [...array].sort(() => Math.random() - 0.5);
+}
+
+async function startTest() {
+  const path = document.getElementById("dataset").value;
+  await loadCSV(path);
+
+  if (words.length === 0) {
+    alert("CSVが読み込めません");
+    return;
+  }
+
+  mode = document.getElementById("mode").value;
+  const count = parseInt(document.getElementById("count").value);
+
+  quizData = shuffle(words).slice(0, count);
+  current = 0;
+  correctCount = 0;
+  wrongList = [];
+  wrongData = [];
+
+  document.getElementById("quiz").classList.remove("hidden");
+  document.getElementById("score").classList.add("hidden");
+
+  nextQuestion();
+}
+
+function nextQuestion() {
+  if (current >= quizData.length) {
+    showScore();
+    return;
+  }
+
+  const q = quizData[current];
+  const questionEl = document.getElementById("question");
+  const choicesEl = document.getElementById("choices");
+  const inputEl = document.getElementById("answerInput");
+  const resultEl = document.getElementById("result");
+
+  resultEl.textContent = "";
+  resultEl.classList.remove("wrong");
+  choicesEl.innerHTML = "";
+
+  if (mode === "en-ja") {
+    questionEl.textContent = q[0];
+    inputEl.classList.add("hidden");
+
+    let options = shuffle(words)
+      .filter(w => w[1] !== q[1])
+      .slice(0, 3)
+      .map(w => w[1]);
+
+    options.push(q[1]);
+    options = shuffle(options);
+
+    options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.textContent = opt;
+      btn.onclick = () => checkAnswer(opt, q[1]);
+      choicesEl.appendChild(btn);
+    });
+  } else {
+    questionEl.textContent = q[1];
+    inputEl.classList.remove("hidden");
+    inputEl.value = "";
+    inputEl.focus();
+  }
+}
+
+function submitAnswer() {
+  if (mode === "ja-en") {
+    const input = document.getElementById("answerInput").value.trim();
+    checkAnswer(input, quizData[current][0]);
+  }
+}
+
+document.getElementById("answerInput").addEventListener("keydown", function(e) {
+  if (e.key === "Enter") {
+    submitAnswer();
+  }
+});
+
+function checkAnswer(ans, correct) {
+  const resultEl = document.getElementById("result");
+  const body = document.body;
+  const currentQ = quizData[current];
+
+  if (ans.toLowerCase() === correct.toLowerCase()) {
+    resultEl.textContent = "⭕";
+    correctCount++;
+    body.classList.add("correct-bg");
+  } else {
+    resultEl.textContent = "❌ 正解: " + correct;
+    resultEl.classList.add("wrong");
+    body.classList.add("wrong-bg");
+
+    wrongList.push({
+      question: mode === "en-ja" ? currentQ[0] : currentQ[1],
+      correct: correct
+    });
+
+    wrongData.push(currentQ);
+  }
+
+  current++;
+
+  setTimeout(() => {
+    body.classList.remove("correct-bg", "wrong-bg");
+    resultEl.classList.remove("wrong");
+    nextQuestion();
+  }, 2500);
+}
+
+function showScore() {
+  document.getElementById("quiz").classList.add("hidden");
+  const scoreEl = document.getElementById("score");
+  const rate = Math.round((correctCount / quizData.length) * 100);
+
+  document.getElementById("scoreText").textContent =
+    `正解数: ${correctCount} / ${quizData.length}（${rate}%）`;
+
+  const wrongDiv = document.getElementById("wrongList");
+  wrongDiv.innerHTML = "<h4>間違えた単語</h4>";
+
+  wrongList.forEach(w => {
+    const p = document.createElement("p");
+    p.textContent = `${w.question} → ${w.correct}`;
+    wrongDiv.appendChild(p);
+  });
+
+  if (wrongData.length > 0) {
+    document.getElementById("retryBtn").classList.remove("hidden");
+  }
+
+  scoreEl.classList.remove("hidden");
+}
+
+function retryWrong() {
+  if (wrongData.length === 0) return;
+
+  quizData = shuffle(wrongData);
+  current = 0;
+  correctCount = 0;
+  wrongList = [];
+  wrongData = [];
+
+  document.getElementById("score").classList.add("hidden");
+  document.getElementById("quiz").classList.remove("hidden");
+
+  nextQuestion();
+}
+</script>
+
+</body>
+</html>
